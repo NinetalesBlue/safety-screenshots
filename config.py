@@ -19,6 +19,9 @@ SUPABASE_SERVICE_KEY = os.getenv("SUPABASE_SERVICE_KEY")
 
 SAVE_DIR = "./screenshots"
 
+# ✅ 重点：这里必须要有
+DASHSCOPE_API_KEY = os.getenv("DASHSCOPE_API_KEY")
+
 ANALYSIS_PROMPT = """你是一个专业的工地安全巡检AI。请仔细观察图片，判断是否存在以下安全隐患：
 - 围挡是否倒塌、倾斜、破损
 - 进场人员是否佩戴安全帽、反光背心等劳保用品
