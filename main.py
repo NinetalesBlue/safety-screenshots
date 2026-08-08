@@ -6,6 +6,8 @@ import smtplib
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.mime.image import MIMEImage
+from email.header import Header
+from email.utils import formataddr
 from datetime import datetime
 import pyautogui
 import requests
@@ -111,10 +113,16 @@ def save_record(public_url: str, analysis: dict):
         logging.error(f"数据库写入失败: {e}")
 
 def send_alert(local_image_path: str, analysis: dict):
-    """使用 SSL (端口 465) 发送告警邮件，内嵌现场截图"""
+    """发送带截图的告警邮件（修复中文编码，收件人为 safetyai@163.com）"""
     msg = MIMEMultipart('related')
-    msg['Subject'] = f"⚠️ 安全隐患报警 - {config.MACHINE_NAME} - {datetime.now():%Y-%m-%d %H:%M}"
-    msg['From'] = config.SMTP_USER
+    
+    # 主题使用 Header 编码
+    subject = f"⚠️ 安全隐患报警 - {config.MACHINE_NAME} - {datetime.now():%Y-%m-%d %H:%M}"
+    msg['Subject'] = Header(subject, 'utf-8')
+    
+    # 发件人（可加名称）
+    msg['From'] = formataddr(('AI安全监控', config.SMTP_USER))
+    # 收件人
     msg['To'] = ", ".join(config.RECIPIENT_EMAILS)
 
     # 构造 HTML 内容
@@ -140,17 +148,16 @@ def send_alert(local_image_path: str, analysis: dict):
     </body></html>"""
     msg.attach(MIMEText(html, 'html', 'utf-8'))
 
-    # 添加图片附件（内嵌）
     with open(local_image_path, 'rb') as f:
         img = MIMEImage(f.read(), _subtype='png')
         img.add_header('Content-ID', '<scene>')
         img.add_header('Content-Disposition', 'attachment', filename=os.path.basename(local_image_path))
         msg.attach(img)
 
-    # ---------- 使用 SSL 连接 465 端口 ----------
+    # 发送（SSL 465）
     try:
         with smtplib.SMTP_SSL(config.SMTP_SERVER, config.SMTP_PORT, timeout=15) as s:
-            s.set_debuglevel(1)          # 输出详细交互日志，便于调试
+            s.set_debuglevel(1)
             s.login(config.SMTP_USER, config.SMTP_PASSWORD)
             s.send_message(msg)
         logging.info("告警邮件已发送")
@@ -158,28 +165,46 @@ def send_alert(local_image_path: str, analysis: dict):
         logging.error(f"邮件发送失败: {e}")
 
 def main():
-    logging.info("===== 安全监控 AI 守护进程启动 =====")
+    # ---------- 启动时设置截图间隔 ----------
+    default_interval = config.INTERVAL  # 从 .env 读取的默认值
+    print(f"\n当前默认截图间隔：{default_interval} 秒（约 {default_interval/60:.1f} 分钟）")
+    print(f"请输入新的间隔秒数（直接回车使用默认值）：")
+    try:
+        user_input = input(">>> ").strip()
+        if user_input == "":
+            interval = default_interval
+        else:
+            interval = int(user_input)
+            if interval < 10:
+                print("间隔不能小于 10 秒，已设置为 10 秒")
+                interval = 10
+            elif interval > 86400:
+                print("间隔不能大于 86400 秒（24小时），已设置为 86400 秒")
+                interval = 86400
+    except ValueError:
+        print(f"输入无效，使用默认值 {default_interval} 秒")
+        interval = default_interval
+
+    print(f"✅ 监控间隔已设置为 {interval} 秒（约 {interval/60:.1f} 分钟）")
+    print("程序正在运行，按 Ctrl+C 停止...\n")
+    logging.info(f"===== 安全监控 AI 守护进程启动（间隔 {interval} 秒）=====")
+
     while True:
         try:
-            # 1. 截图
             img_path = capture_screen()
-            # 2. 上传到 Supabase 图床
             public_url = upload_to_storage(img_path)
-            # 3. 调用千问分析
             result = analyze_via_qwen(public_url)
             if result is None:
-                time.sleep(config.INTERVAL)
+                time.sleep(interval)
                 continue
-            # 4. 记录到数据库
             save_record(public_url, result)
-            # 5. 如果有隐患，发邮件
             if result.get('has_risk'):
                 send_alert(img_path, result)
             else:
                 logging.info("✅ 未发现隐患")
         except Exception as e:
             logging.error(f"主循环异常: {e}")
-        time.sleep(config.INTERVAL)
+        time.sleep(interval)
 
 if __name__ == "__main__":
     main()
