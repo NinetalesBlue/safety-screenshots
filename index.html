@@ -3,8 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>AI安全监控 - 管理后台</title>
-  <!-- 只引入一次 Supabase -->
+  <title>AI安全监控</title>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <style>
     * { margin:0; padding:0; box-sizing:border-box; }
@@ -28,184 +27,151 @@
 <div id="app"></div>
 
 <script>
-  const SUPABASE_URL = 'https://lrtnivmjqkwliyzwergz.supabase.co';
-  const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxydG5pdm1qcWt3bGl5endlcmd6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODYxMzc4MTAsImV4cCI6MjEwMTcxMzgxMH0.txZsrv9skBzmD61S4nhNHTOdLoqQWACccaJHIj7O-Mg';
+  (function() {
+    const SUPABASE_URL = 'https://lrtnivmjqkwliyzwergz.supabase.co';
+    const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxydG5pdm1qcWt3bGl5endlcmd6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODYxMzc4MTAsImV4cCI6MjEwMTcxMzgxMH0.txZsrv9skBzmD61S4nhNHTOdLoqQWACccaJHIj7O-Mg';
 
-  // 只声明一次 supabase
-  const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+    const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+    let currentUser = null;
 
-  let currentUser = null;
-
-  supabase.auth.onAuthStateChange((event, session) => {
-    if (event === 'SIGNED_OUT') {
-      currentUser = null;
-      renderLogin();
-    } else if (session) {
-      currentUser = session.user;
-      renderRecords();
-    }
-  });
-
-  async function checkSession() {
-    const { data: { session } } = await supabase.auth.getSession();
-    if (session) {
-      currentUser = session.user;
-      renderRecords();
-    } else {
-      renderLogin();
-    }
-  }
-
-  function renderLogin() {
-    document.getElementById('app').innerHTML = `
-      <div class="login-container">
-        <h2>🔐 管理员登录</h2>
-        <div id="loginError" class="error" style="display:none;"></div>
-        <input type="email" id="email" placeholder="邮箱" value="ghadmin@163.com"><br><br>
-        <input type="password" id="password" placeholder="密码" value="123456"><br><br>
-        <button id="loginBtn">登录</button>
-      </div>`;
-    document.getElementById('loginBtn').addEventListener('click', login);
-  }
-
-  async function login() {
-    const email = document.getElementById('email').value.trim();
-    const password = document.getElementById('password').value;
-    const errorDiv = document.getElementById('loginError');
-    errorDiv.style.display = 'none';
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
-    if (error) {
-      errorDiv.textContent = error.message;
-      errorDiv.style.display = 'block';
-    }
-  }
-
-  async function logout() {
-    await supabase.auth.signOut();
-  }
-
-  async function renderRecords(page = 1) {
-    const urlParams = new URLSearchParams(window.location.search);
-    const start_date = urlParams.get('start_date') || '';
-    const end_date = urlParams.get('end_date') || '';
-    const start_num = urlParams.get('start_num') || '';
-    const end_num = urlParams.get('end_num') || '';
-    page = parseInt(urlParams.get('page') || page) || 1;
-
-    const perPage = 10;
-    const offset = (page - 1) * perPage;
-
-    let query = supabase.from('screen_monitor_logs').select('*', { count: 'exact' });
-    if (start_date) query = query.gte('created_at', start_date);
-    if (end_date) query = query.lte('created_at', end_date);
-    query = query.order('created_at', { ascending: false });
-
-    let records, totalCount, totalPages;
-
-    if (start_num && end_num) {
-      const s = parseInt(start_num) - 1;
-      const e = parseInt(end_num);
-      const limit = e - s;
-      if (limit <= 0) {
-        records = []; totalCount = 0;
-      } else {
-        const { data, error, count } = await query.range(s, s + limit - 1);
-        records = data || [];
-        totalCount = count || records.length;
-      }
-      totalPages = null;
-    } else {
-      const { data, error, count } = await query.range(offset, offset + perPage - 1);
-      records = data || [];
-      totalCount = count || 0;
-      totalPages = Math.ceil(totalCount / perPage);
-    }
-
-    document.getElementById('app').innerHTML = `
-      <div class="container">
-        <h1>📷 监控历史记录 <span class="logout" id="logoutBtn">退出</span></h1>
-        <div class="filter-box">
-          <form id="filterForm">
-            <label>开始时间 <input type="datetime-local" name="start_date" value="${start_date}"></label>
-            <label>结束时间 <input type="datetime-local" name="end_date" value="${end_date}"></label>
-            <br><br>
-            <label>第 <input type="number" name="start_num" min="1" placeholder="起始编号" value="${start_num}" style="width:80px;"> 条</label>
-            <label> 到 <input type="number" name="end_num" min="1" placeholder="结束编号" value="${end_num}" style="width:80px;"> 条</label>
-            <button type="submit">查询</button>
-            <button type="button" id="clearFilter">清除</button>
-          </form>
-        </div>
-        <p>共 <strong>${totalCount || 0}</strong> 条记录 ${totalPages ? `，第 ${page}/${totalPages} 页` : ''}</p>
-        <table>
-          <tr><th>时间</th><th>监控机</th><th>截图</th><th>隐患信息</th></tr>
-          ${records.map(rec => renderRecordRow(rec)).join('')}
-        </table>
-        ${totalPages ? renderPagination(page, totalPages, start_date, end_date) : ''}
-      </div>`;
-
-    document.getElementById('logoutBtn').addEventListener('click', logout);
-    document.getElementById('filterForm').addEventListener('submit', (e) => {
-      e.preventDefault();
-      const formData = new FormData(e.target);
-      const params = new URLSearchParams(formData);
-      window.history.pushState({}, '', '?' + params.toString());
-      renderRecords(1);
+    supabase.auth.onAuthStateChange((event, session) => {
+      if (event === 'SIGNED_OUT') { currentUser = null; renderLogin(); }
+      else if (session) { currentUser = session.user; renderRecords(); }
     });
-    document.getElementById('clearFilter').addEventListener('click', () => {
-      window.history.pushState({}, '', window.location.pathname);
-      renderRecords(1);
-    });
-  }
 
-  function renderRecordRow(rec) {
-    const analysis = rec.analysis || {};
-    let riskHtml = '';
-    if (analysis.has_risk) {
-      (analysis.risks || []).forEach(risk => {
-        const sev = risk.severity || '低';
-        const color = {'高':'red','中':'orange','低':'green'}[sev] || 'black';
-        riskHtml += `<div style="margin-bottom:4px;">
-          <span style="color:${color};font-weight:bold;">● ${sev}风险 - ${escapeHtml(risk.type)}</span><br>
-          ${escapeHtml(risk.description)}<br><small>建议：${escapeHtml(risk.suggestion)}</small>
+    async function checkSession() {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session) { currentUser = session.user; renderRecords(); }
+      else renderLogin();
+    }
+
+    function renderLogin() {
+      document.getElementById('app').innerHTML = `
+        <div class="login-container">
+          <h2>🔐 管理员登录</h2>
+          <div id="loginError" style="color:red;display:none;"></div>
+          <input type="email" id="email" placeholder="邮箱" value="ghadmin@163.com"><br><br>
+          <input type="password" id="password" placeholder="密码" value="123456"><br><br>
+          <button id="loginBtn">登录</button>
         </div>`;
-      });
-    } else {
-      riskHtml = '<span style="color:green;">✅ 无隐患</span>';
+      document.getElementById('loginBtn').addEventListener('click', login);
     }
-    const img = rec.image_path ? `<a href="${rec.image_path}" target="_blank"><img src="${rec.image_path}" class="thumbnail"></a>` : '';
-    return `<tr>
-      <td>${(rec.created_at||'').substr(0,19)}</td>
-      <td>${escapeHtml(rec.machine_name||'')}<br><small>${escapeHtml(rec.location||'')}</small></td>
-      <td>${img}</td>
-      <td>${riskHtml}</td>
-    </tr>`;
-  }
 
-  function renderPagination(current, total, start_date, end_date) {
-    let html = '<div class="pagination">';
-    const params = new URLSearchParams({start_date, end_date}).toString();
-    if (current > 1) html += `<button onclick="goToPage(${current-1})">上一页</button>`;
-    html += `<strong>${current} / ${total}</strong>`;
-    if (current < total) html += `<button onclick="goToPage(${current+1})">下一页</button>`;
-    html += '</div>';
-    return html;
-  }
+    async function login() {
+      const email = document.getElementById('email').value.trim();
+      const password = document.getElementById('password').value;
+      const errorDiv = document.getElementById('loginError');
+      errorDiv.style.display = 'none';
+      const { error } = await supabase.auth.signInWithPassword({ email, password });
+      if (error) { errorDiv.textContent = error.message; errorDiv.style.display = 'block'; }
+    }
 
-  window.goToPage = function(p) {
-    const urlParams = new URLSearchParams(window.location.search);
-    urlParams.set('page', p);
-    window.history.pushState({}, '', '?' + urlParams.toString());
-    renderRecords(p);
-  };
+    async function logout() {
+      await supabase.auth.signOut();
+    }
 
-  function escapeHtml(str) {
-    const div = document.createElement('div');
-    div.textContent = (str || '');
-    return div.innerHTML;
-  }
+    async function renderRecords(page = 1) {
+      const params = new URLSearchParams(window.location.search);
+      const start_date = params.get('start_date') || '';
+      const end_date = params.get('end_date') || '';
+      const start_num = params.get('start_num') || '';
+      const end_num = params.get('end_num') || '';
+      page = parseInt(params.get('page') || page) || 1;
+      const perPage = 10;
+      let query = supabase.from('screen_monitor_logs').select('*', { count: 'exact' });
+      if (start_date) query = query.gte('created_at', start_date);
+      if (end_date) query = query.lte('created_at', end_date);
+      query = query.order('created_at', { ascending: false });
 
-  // 启动
-  checkSession();
+      let records, totalCount, totalPages;
+
+      if (start_num && end_num) {
+        const s = parseInt(start_num)-1, e = parseInt(end_num);
+        if (e-s <= 0) { records = []; totalCount = 0; }
+        else {
+          const { data } = await query.range(s, s + e - s - 1);
+          records = data || []; totalCount = records.length;
+        }
+        totalPages = null;
+      } else {
+        const { data, count } = await query.range((page-1)*perPage, page*perPage-1);
+        records = data || []; totalCount = count || 0;
+        totalPages = Math.ceil(totalCount / perPage);
+      }
+
+      document.getElementById('app').innerHTML = `
+        <div class="container">
+          <h1>📷 监控历史记录 <span class="logout" id="logoutBtn">退出</span></h1>
+          <div class="filter-box">
+            <form id="filterForm">
+              <label>开始时间 <input type="datetime-local" name="start_date" value="${start_date}"></label>
+              <label>结束时间 <input type="datetime-local" name="end_date" value="${end_date}"></label>
+              <br><br>
+              <label>第 <input type="number" name="start_num" placeholder="起始编号" value="${start_num}" style="width:80px;"> 条</label>
+              <label> 到 <input type="number" name="end_num" placeholder="结束编号" value="${end_num}" style="width:80px;"> 条</label>
+              <button type="submit">查询</button>
+              <button type="button" id="clearFilter">清除</button>
+            </form>
+          </div>
+          <p>共 <strong>${totalCount || 0}</strong> 条记录 ${totalPages ? `，第 ${page}/${totalPages} 页` : ''}</p>
+          <table>
+            <tr><th>时间</th><th>监控机</th><th>截图</th><th>隐患信息</th></tr>
+            ${records.map(rec => {
+              const a = rec.analysis || {};
+              let riskHtml = '';
+              if (a.has_risk) {
+                (a.risks || []).forEach(r => {
+                  const color = {高:'red',中:'orange',低:'green'}[r.severity] || 'black';
+                  riskHtml += `<div style="margin-bottom:4px;">
+                    <span style="color:${color};font-weight:bold;">● ${r.severity}风险 - ${escapeHtml(r.type)}</span><br>
+                    ${escapeHtml(r.description)}<br><small>建议：${escapeHtml(r.suggestion)}</small>
+                  </div>`;
+                });
+              } else riskHtml = '<span style="color:green;">✅ 无隐患</span>';
+              const img = rec.image_path ? `<a href="${rec.image_path}" target="_blank"><img src="${rec.image_path}" class="thumbnail"></a>` : '';
+              return `<tr>
+                <td>${(rec.created_at||'').substr(0,19)}</td>
+                <td>${escapeHtml(rec.machine_name)}<br><small>${escapeHtml(rec.location)}</small></td>
+                <td>${img}</td>
+                <td>${riskHtml}</td>
+              </tr>`;
+            }).join('')}
+          </table>
+          ${totalPages ? `<div class="pagination">
+            ${page>1 ? `<button onclick="goToPage(${page-1})">上一页</button>` : ''}
+            <strong>${page} / ${totalPages}</strong>
+            ${page<totalPages ? `<button onclick="goToPage(${page+1})">下一页</button>` : ''}
+          </div>` : ''}
+        </div>`;
+      document.getElementById('logoutBtn').addEventListener('click', logout);
+      document.getElementById('filterForm').addEventListener('submit', e => {
+        e.preventDefault();
+        const fd = new FormData(e.target);
+        const p = new URLSearchParams(fd);
+        window.history.pushState({}, '', '?' + p.toString());
+        renderRecords(1);
+      });
+      document.getElementById('clearFilter').addEventListener('click', () => {
+        window.history.pushState({}, '', window.location.pathname);
+        renderRecords(1);
+      });
+    }
+
+    window.goToPage = function(p) {
+      const params = new URLSearchParams(window.location.search);
+      params.set('page', p);
+      window.history.pushState({}, '', '?' + params.toString());
+      renderRecords(p);
+    };
+
+    function escapeHtml(str) {
+      const d = document.createElement('div');
+      d.textContent = (str||'');
+      return d.innerHTML;
+    }
+
+    checkSession();
+  })();
 </script>
 </body>
 </html>
