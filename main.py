@@ -111,7 +111,7 @@ def save_record(public_url: str, analysis: dict):
         logging.error(f"数据库写入失败: {e}")
 
 def send_alert(local_image_path: str, analysis: dict):
-    """发送带截图的告警邮件（使用 SMTP_SSL 或 STARTTLS，优先试用 STARTTLS）"""
+    """使用 SSL (端口 465) 发送告警邮件，内嵌现场截图"""
     msg = MIMEMultipart('related')
     msg['Subject'] = f"⚠️ 安全隐患报警 - {config.MACHINE_NAME} - {datetime.now():%Y-%m-%d %H:%M}"
     msg['From'] = config.SMTP_USER
@@ -140,16 +140,17 @@ def send_alert(local_image_path: str, analysis: dict):
     </body></html>"""
     msg.attach(MIMEText(html, 'html', 'utf-8'))
 
+    # 添加图片附件（内嵌）
     with open(local_image_path, 'rb') as f:
         img = MIMEImage(f.read(), _subtype='png')
         img.add_header('Content-ID', '<scene>')
         img.add_header('Content-Disposition', 'attachment', filename=os.path.basename(local_image_path))
         msg.attach(img)
 
+    # ---------- 使用 SSL 连接 465 端口 ----------
     try:
-        with smtplib.SMTP(config.SMTP_SERVER, config.SMTP_PORT, timeout=15) as s:
-            s.set_debuglevel(1)  # 输出详细交互日志，便于调试
-            s.starttls()
+        with smtplib.SMTP_SSL(config.SMTP_SERVER, config.SMTP_PORT, timeout=15) as s:
+            s.set_debuglevel(1)          # 输出详细交互日志，便于调试
             s.login(config.SMTP_USER, config.SMTP_PASSWORD)
             s.send_message(msg)
         logging.info("告警邮件已发送")
