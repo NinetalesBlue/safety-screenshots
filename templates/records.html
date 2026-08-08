@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <title>监控记录 - AI安全助手</title>
+  <style>
+    body { font-family: sans-serif; background: #f5f7fb; margin: 0; padding: 20px; }
+    .container { max-width: 960px; margin: auto; background: white; padding: 24px; border-radius: 16px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); }
+    h1 { color: #1e3b5a; }
+    .logout { float: right; color: #e74c3c; text-decoration: none; }
+    .filter-box { background: #f9f9f9; padding: 16px; border-radius: 12px; margin: 20px 0; }
+    .filter-box input, .filter-box button { padding: 6px 10px; margin-right: 8px; }
+    table { width: 100%; border-collapse: collapse; margin-top: 16px; }
+    th, td { border-bottom: 1px solid #eee; padding: 12px 8px; text-align: left; font-size: 14px; }
+    th { background: #f4f6f9; }
+    .risk-high { color: #e74c3c; font-weight: bold; }
+    .risk-medium { color: #f39c12; font-weight: bold; }
+    .risk-low { color: #27ae60; font-weight: bold; }
+    .pagination { margin-top: 20px; text-align: center; }
+    .pagination a { padding: 6px 12px; margin: 0 4px; background: #eee; border-radius: 8px; text-decoration: none; color: #333; }
+    .pagination strong { margin: 0 8px; }
+    .thumbnail { max-width: 100px; cursor: pointer; border-radius: 8px; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>📷 监控历史记录 <a href="/logout" class="logout">退出</a></h1>
+
+    <div class="filter-box">
+      <form method="get" action="/records">
+        <label>开始时间：<input type="datetime-local" name="start_date" value="{{ start_date }}"></label>
+        <label>结束时间：<input type="datetime-local" name="end_date" value="{{ end_date }}"></label>
+        <br><br>
+        <label>第 <input type="number" name="start_num" min="1" step="1" placeholder="起始编号" value="{{ start_num }}" style="width:80px;"> 条</label>
+        <label> 到 <input type="number" name="end_num" min="1" step="1" placeholder="结束编号" value="{{ end_num }}" style="width:80px;"> 条</label>
+        <button type="submit">查询</button>
+        <a href="/records" style="margin-left:10px;">清除筛选</a>
+        <small style="color:#888;">（不填编号则显示分页，每页10条）</small>
+      </form>
+    </div>
+
+    {% if total_count is not none %}
+      <p>共 <strong>{{ total_count }}</strong> 条记录{% if total_pages %}，第 {{ page }}/{{ total_pages }} 页{% endif %}</p>
+    {% endif %}
+
+    <table>
+      <tr>
+        <th>时间</th>
+        <th>监控机</th>
+        <th>截图</th>
+        <th>隐患信息</th>
+      </tr>
+      {% for rec in records %}
+      <tr>
+        <td>{{ rec.created_at[:19] }}</td>
+        <td>{{ rec.machine_name }}<br><small>{{ rec.location }}</small></td>
+        <td><a href="{{ rec.image_path }}" target="_blank"><img src="{{ rec.image_path }}" class="thumbnail" alt="截图"></a></td>
+        <td>
+          {% set analysis = rec.analysis %}
+          {% if analysis.has_risk %}
+            {% for risk in analysis.risks %}
+              <div style="margin-bottom:6px;">
+                <span class="risk-{{ 'high' if risk.severity=='高' else 'medium' if risk.severity=='中' else 'low' }}">
+                  ● {{ risk.severity }}风险 - {{ risk.type }}
+                </span><br>
+                {{ risk.description }}<br>
+                <small>建议：{{ risk.suggestion }}</small>
+              </div>
+            {% endfor %}
+          {% else %}
+            <span style="color:green;">✅ 无隐患</span>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+      {% if not records %}
+      <tr><td colspan="4" style="text-align:center; color:#999;">暂无记录</td></tr>
+      {% endif %}
+    </table>
+
+    {% if total_pages %}
+    <div class="pagination">
+      {% if page > 1 %}
+        <a href="?page={{ page-1 }}&start_date={{ start_date }}&end_date={{ end_date }}">上一页</a>
+      {% endif %}
+      <strong>{{ page }} / {{ total_pages }}</strong>
+      {% if page < total_pages %}
+        <a href="?page={{ page+1 }}&start_date={{ start_date }}&end_date={{ end_date }}">下一页</a>
+      {% endif %}
+    </div>
+    {% endif %}
+  </div>
+</body>
+</html>
