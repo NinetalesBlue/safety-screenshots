@@ -4,6 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>AI安全监控 - 管理后台</title>
+  <!-- 只引入一次 Supabase -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <style>
     * { margin:0; padding:0; box-sizing:border-box; }
@@ -24,19 +25,17 @@
   </style>
 </head>
 <body>
-
 <div id="app"></div>
 
 <script>
-  // ===== 您的 Supabase 配置（已替换真实值）=====
   const SUPABASE_URL = 'https://lrtnivmjqkwliyzwergz.supabase.co';
   const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxydG5pdm1qcWt3bGl5endlcmd6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODYxMzc4MTAsImV4cCI6MjEwMTcxMzgxMH0.txZsrv9skBzmD61S4nhNHTOdLoqQWACccaJHIj7O-Mg';
 
+  // 只声明一次 supabase
   const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
   let currentUser = null;
 
-  // 监听登录状态
   supabase.auth.onAuthStateChange((event, session) => {
     if (event === 'SIGNED_OUT') {
       currentUser = null;
@@ -57,7 +56,6 @@
     }
   }
 
-  // ===== 登录页 =====
   function renderLogin() {
     document.getElementById('app').innerHTML = `
       <div class="login-container">
@@ -86,7 +84,6 @@
     await supabase.auth.signOut();
   }
 
-  // ===== 记录页面 =====
   async function renderRecords(page = 1) {
     const urlParams = new URLSearchParams(window.location.search);
     const start_date = urlParams.get('start_date') || '';
@@ -99,7 +96,6 @@
     const offset = (page - 1) * perPage;
 
     let query = supabase.from('screen_monitor_logs').select('*', { count: 'exact' });
-
     if (start_date) query = query.gte('created_at', start_date);
     if (end_date) query = query.lte('created_at', end_date);
     query = query.order('created_at', { ascending: false });
@@ -208,7 +204,7 @@
     return div.innerHTML;
   }
 
-  // 启动检查
+  // 启动
   checkSession();
 </script>
 </body>
