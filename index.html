@@ -164,12 +164,12 @@
 
     const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
     let currentUser = null;
+    let currentTotalCount = 0; // 保存当前筛选条件下的总记录数
 
-    // 灯箱逻辑（强化关闭功能）
+    // 灯箱逻辑
     const lightbox = document.getElementById('lightbox');
     const lightboxImg = document.getElementById('lightboxImg');
     const lightboxDownload = document.getElementById('lightboxDownload');
-
     function openLightbox(url) {
       lightboxImg.src = url;
       lightboxDownload.href = url;
@@ -177,17 +177,14 @@
     }
     function closeLightbox() {
       lightbox.classList.remove('active');
-      lightboxImg.src = ''; // 释放内存
+      lightboxImg.src = '';
     }
     document.getElementById('lightboxClose').addEventListener('click', closeLightbox);
-    lightbox.addEventListener('click', (e) => {
-      if (e.target === lightbox) closeLightbox();
-    });
+    lightbox.addEventListener('click', (e) => { if (e.target === lightbox) closeLightbox(); });
     document.addEventListener('keydown', (e) => {
       if (e.key === 'Escape' && lightbox.classList.contains('active')) closeLightbox();
     });
 
-    // 图片加载错误处理（在生成 HTML 时已加 onerror，这里再全局兜底）
     window.handleImageError = function(img) {
       img.style.display = 'none';
       img.parentElement.innerHTML = '<div class="missing-image">⚠️ 图片已丢失</div>';
@@ -235,14 +232,43 @@
 
     async function logout() { await supabase.auth.signOut(); }
 
+    async function fetchTotalCount(start_date, end_date) {
+      let query = supabase.from('screen_monitor_logs').select('*', { count: 'exact', head: true });
+      if (start_date) query = query.gte('created_at', start_date);
+      if (end_date) query = query.lte('created_at', end_date);
+      const { count } = await query;
+      return count || 0;
+    }
+
     async function renderRecords(page = 1) {
       const params = new URLSearchParams(window.location.search);
       const start_date = params.get('start_date') || '';
       const end_date = params.get('end_date') || '';
-      const start_num = params.get('start_num') || '';
-      const end_num = params.get('end_num') || '';
+      let start_num = params.get('start_num') || '';
+      let end_num = params.get('end_num') || '';
       page = parseInt(params.get('page') || page) || 1;
       const perPage = 10;
+
+      // 先获取总记录数，用于限制编号输入
+      currentTotalCount = await fetchTotalCount(start_date, end_date);
+
+      // 如果使用了编号区间，自动修正
+      if (start_num || end_num) {
+        let s = parseInt(start_num) || 1;
+        let e = parseInt(end_num) || currentTotalCount;
+        if (s < 1) s = 1;
+        if (e > currentTotalCount) e = currentTotalCount;
+        if (s > e) s = e;
+        start_num = s.toString();
+        end_num = e.toString();
+        // 更新 URL 参数，避免显示超范围
+        const newParams = new URLSearchParams();
+        if (start_date) newParams.set('start_date', start_date);
+        if (end_date) newParams.set('end_date', end_date);
+        if (start_num) newParams.set('start_num', start_num);
+        if (end_num) newParams.set('end_num', end_num);
+        window.history.replaceState({}, '', '?' + newParams.toString());
+      }
 
       let query = supabase.from('screen_monitor_logs').select('*', { count: 'exact' });
       if (start_date) query = query.gte('created_at', start_date);
@@ -252,16 +278,19 @@
       let records, totalCount, totalPages;
 
       if (start_num && end_num) {
-        const s = parseInt(start_num)-1, e = parseInt(end_num);
-        if (e-s <= 0) { records = []; totalCount = 0; }
+        const s = parseInt(start_num) - 1;
+        const e = parseInt(end_num);
+        if (e - s <= 0) { records = []; totalCount = 0; }
         else {
-          const { data } = await query.range(s, s + e - s - 1);
-          records = data || []; totalCount = records.length;
+          const { data, count } = await query.range(s, s + e - s - 1);
+          records = data || [];
+          totalCount = count || records.length;
         }
         totalPages = null;
       } else {
         const { data, count } = await query.range((page-1)*perPage, page*perPage-1);
-        records = data || []; totalCount = count || 0;
+        records = data || [];
+        totalCount = count || 0;
         totalPages = Math.ceil(totalCount / perPage);
       }
 
@@ -282,14 +311,11 @@
         } else {
           riskHtml = '<div class="no-risk">✅ 未发现隐患</div>';
         }
-
-        // 图片区域：如果路径存在，则显示图片，否则直接显示“图片已丢失”
         const imgTag = rec.image_path
           ? `<div class="record-image-wrapper" onclick="openLightbox('${rec.image_path}')">
                <img src="${rec.image_path}" class="record-image" alt="现场截图" onerror="window.handleImageError(this)">
              </div>`
           : '<div class="record-image-wrapper missing-image">⚠️ 图片已丢失</div>';
-
         return `
           <div class="record-card">
             ${imgTag}
@@ -320,12 +346,12 @@
                 <input type="datetime-local" id="end_date" value="${end_date}">
               </div>
               <div class="filter-item">
-                <label>起始编号</label>
-                <input type="number" id="start_num" placeholder="第" value="${start_num}" style="width:90px;">
+                <label>起始编号 (1~${currentTotalCount})</label>
+                <input type="number" id="start_num" min="1" max="${currentTotalCount}" placeholder="起始" value="${start_num}" style="width:90px;">
               </div>
               <div class="filter-item">
-                <label>结束编号</label>
-                <input type="number" id="end_num" placeholder="第" value="${end_num}" style="width:90px;">
+                <label>结束编号 (1~${currentTotalCount})</label>
+                <input type="number" id="end_num" min="1" max="${currentTotalCount}" placeholder="结束" value="${end_num}" style="width:90px;">
               </div>
               <div class="filter-item" style="align-self:flex-end;">
                 <button class="btn-sm" id="searchBtn">🔍 查询</button>
@@ -343,18 +369,32 @@
             </div>` : ''}
         </div>`;
 
-      // 事件绑定
       document.getElementById('logoutBtn').addEventListener('click', logout);
       document.getElementById('searchBtn').addEventListener('click', () => {
         const start = document.getElementById('start_date').value;
         const end = document.getElementById('end_date').value;
-        const snum = document.getElementById('start_num').value;
-        const enum_ = document.getElementById('end_num').value;
+        let s = document.getElementById('start_num').value;
+        let e = document.getElementById('end_num').value;
+        // 前端校验
+        if (s) {
+          let snum = parseInt(s);
+          if (snum < 1) s = '1';
+          if (snum > currentTotalCount) s = currentTotalCount.toString();
+        }
+        if (e) {
+          let enum_ = parseInt(e);
+          if (enum_ < 1) e = '1';
+          if (enum_ > currentTotalCount) e = currentTotalCount.toString();
+        }
+        if (s && e && parseInt(s) > parseInt(e)) {
+          alert('起始编号不能大于结束编号');
+          return;
+        }
         const newParams = new URLSearchParams();
         if (start) newParams.set('start_date', start);
         if (end) newParams.set('end_date', end);
-        if (snum) newParams.set('start_num', snum);
-        if (enum_) newParams.set('end_num', enum_);
+        if (s) newParams.set('start_num', s);
+        if (e) newParams.set('end_num', e);
         window.history.pushState({}, '', '?' + newParams.toString());
         renderRecords(1);
       });
@@ -377,10 +417,7 @@
       renderRecords(p);
     };
 
-    // 暴露给全局 onclick
-    window.openLightbox = function(url) {
-      openLightbox(url);
-    };
+    window.openLightbox = function(url) { openLightbox(url); };
 
     function escapeHtml(str) {
       const d = document.createElement('div');
